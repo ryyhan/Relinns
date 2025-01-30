@@ -1,3 +1,4 @@
+import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import openai
@@ -29,25 +30,12 @@ def scrape_website(url):
         return ' '.join(content)
     
     except Exception as e:
-        print(f"Scraping error: {e}")
-        return None
-
-def process_content(content):
-    # Clean and structure content
-    processed = content
-    return processed
-
-def initialize_chatbot():
-    # Scrape website content
-    website_content = scrape_website("https://botpenguin.com/")
-    processed_content = process_content(website_content)
-    
-    return processed_content
+        return f"Scraping error: {e}"
 
 def chat_with_gpt(context, user_input):
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": f"You are a helpful assistant. Use this knowledge base: {context}"},
                 {"role": "user", "content": user_input}
@@ -57,22 +45,24 @@ def chat_with_gpt(context, user_input):
     except Exception as e:
         return f"Error: {str(e)}"
 
-def main():
-    context = initialize_chatbot()
-    
-    if not context:
-        print("Failed to initialize chatbot")
-        return
-    
-    print("Chatbot initialized. Ask about BotPenguin!")
-    
-    while True:
-        user_input = input("You: ")
-        if user_input.lower() in ['exit', 'quit']:
-            break
-            
-        response = chat_with_gpt(context, user_input)
-        print(f"Bot: {response}")
+# Streamlit UI
+st.title("Website Chatbot")
+st.write("Enter a website URL to scrape and chat based on its content.")
 
-if __name__ == "__main__":
-    main()
+url = st.text_input("Website URL", "https://botpenguin.com/")
+
+if st.button("Scrape Website"):
+    with st.spinner("Scraping content..."):
+        context = scrape_website(url)
+        if "Scraping error" in context:
+            st.error(context)
+        else:
+            st.session_state["context"] = context
+            st.success("Content scraped successfully!")
+
+if "context" in st.session_state:
+    st.text_area("Scraped Content", st.session_state["context"], height=200)
+    user_input = st.text_input("You:")
+    if st.button("Send") and user_input:
+        response = chat_with_gpt(st.session_state["context"], user_input)
+        st.text_area("Bot:", response, height=100)
