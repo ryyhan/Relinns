@@ -5,7 +5,7 @@ from openai import OpenAI
 import chromadb
 from dotenv import load_dotenv
 import os
-from langchain.text_splitter import RecursiveCharacterTextSplitter 
+from langchain.text_splitter import RecursiveCharacterTextSplitter  # LangChain chunker
 
 # Load environment variables
 load_dotenv()
@@ -13,8 +13,8 @@ load_dotenv()
 # Initialize the OpenAI client
 client_openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Initialize Chroma client
-client_chroma = chromadb.Client()
+# Initialize Chroma client with persistent storage
+client_chroma = chromadb.PersistentClient(path="./chroma_db")  # Store data in a local directory
 
 # Check if the collection exists and create it if not
 def get_or_create_collection(collection_name):
@@ -101,12 +101,11 @@ def chat_with_gpt(context, user_input):
     try:
         # Use the new method for completions with a conversational prompt
         response = client_openai.chat.completions.create(
-            model="gpt-4-turbo-preview",  # Replace with the correct model name
+            model="gpt-4o-mini",  # Replace with the correct model name
             messages=[
-                {"role": "system", "content": f"Context:\n{context}"},
+                {"role": "system", "content": f"You are a helpful assistant. Use the following context to answer the user's question in a concise and accurate manner. If the user's question is not related to the context, respond with 'I'm sorry, This question is not related to the context of the website.'.\n\nContext:\n{context}"},
                 {"role": "user", "content": user_input}
-            ],
-            max_tokens=150  # Adjust token limit as needed
+            ]
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
@@ -116,7 +115,34 @@ def chat_with_gpt(context, user_input):
 st.title("Website Chatbot")
 st.write("Enter a website URL to scrape and chat based on its content.")
 
-url = st.text_input("Website URL", "https://botpenguin.com/")
+# Check if the collection already has data
+if collection.count() > 0:
+    st.success("Embeddings already exist in the database. You can start chatting!")
+else:
+    st.warning("No embeddings found. Please scrape a website first.")
+
+# Chatbot Section
+st.header("Chatbot")
+user_input = st.text_input("You:")
+if st.button("Send") and user_input:
+    with st.spinner("Generating response..."):
+        relevant_docs = search_similar_documents(user_input)
+        
+        # Ensure relevant_docs is a list of strings
+        context_for_gpt = "\n".join([doc if isinstance(doc, str) else str(doc) for doc in relevant_docs]) if relevant_docs else ""
+        
+        # Get response from GPT based on the context
+        response = chat_with_gpt(context_for_gpt, user_input)
+        st.write("Bot:", response)
+
+# Divider to separate sections
+st.divider()
+
+# Scraping Section
+st.header("Scrape and Embed Website Data")
+st.write("Enter a website URL to scrape and generate embeddings.")
+
+url = st.text_input("Website URL", "https://botpenguin.com/", key="scrape_url")
 
 if st.button("Scrape Website"):
     with st.spinner("Scraping content..."):
@@ -126,7 +152,7 @@ if st.button("Scrape Website"):
         else:
             # Use LangChain's RecursiveCharacterTextSplitter for chunking
             text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=800,  # Number of characters per chunk
+                chunk_size=1000,  # Increased chunk size to 1000
                 chunk_overlap=50,  # Overlap between chunks
                 length_function=len,  # Function to measure chunk size
                 separators=["\n\n", "\n", " ", ""]  # Split by paragraphs, lines, and words
@@ -147,16 +173,7 @@ if st.button("Scrape Website"):
             else:
                 st.error("Error generating embeddings for one or more chunks.")
 
-if "context" in st.session_state:
-    st.text_area("Scraped Content", st.session_state["context"], height=200)
-    user_input = st.text_input("You:")
-    if st.button("Send") and user_input:
-        with st.spinner("Generating response..."):
-            relevant_docs = search_similar_documents(user_input)
-            
-            # Ensure relevant_docs is a list of strings
-            context_for_gpt = "\n".join([doc if isinstance(doc, str) else str(doc) for doc in relevant_docs]) if relevant_docs else st.session_state["context"]
-            
-            # Get response from GPT based on the context
-            response = chat_with_gpt(context_for_gpt, user_input)
-            st.text_area("Bot:", response, height=100)
+if st.button("Clear Collection"):
+    client_chroma.delete_collection("web_data_embeddings")
+    st.session_state.clear()
+    st.success("Collection cleared successfully!")
