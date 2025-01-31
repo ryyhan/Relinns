@@ -29,6 +29,19 @@ def get_or_create_collection(collection_name):
 # Create or get the collection to store embeddings
 collection = get_or_create_collection("web_data_embeddings")
 
+# Function to log scraped URLs
+def log_scraped_url(url):
+    with open("log.txt", "a") as f:
+        f.write(url + "\n")
+
+# Function to check if a URL has already been scraped
+def is_url_scraped(url):
+    if not os.path.exists("log.txt"):
+        return False
+    with open("log.txt", "r") as f:
+        scraped_urls = f.read().splitlines()
+    return url in scraped_urls
+
 # Function to scrape a website
 def scrape_website(url):
     try:
@@ -103,7 +116,7 @@ def chat_with_gpt(context, user_input):
         response = client_openai.chat.completions.create(
             model="gpt-4o-mini",  # Replace with the correct model name
             messages=[
-                {"role": "system", "content": f"You are a helpful assistant. Use the following context to answer the user's question in a concise and accurate manner. If the user's question is not related to the context, respond with 'I'm sorry, This question is not related to the context of the website.'.\n\nContext:\n{context}"},
+                {"role": "system", "content": f"You are a helpful assistant. Use the following context to answer the user's question in a concise and accurate manner. If you don't know the answer, say 'I don't know'.\n\nContext:\n{context}"},
                 {"role": "user", "content": user_input}
             ]
         )
@@ -145,35 +158,41 @@ st.write("Enter a website URL to scrape and generate embeddings.")
 url = st.text_input("Website URL", "https://botpenguin.com/", key="scrape_url")
 
 if st.button("Scrape Website"):
-    with st.spinner("Scraping content..."):
-        context = scrape_website(url)
-        if "Scraping error" in context:
-            st.error(context)
-        else:
-            # Use LangChain's RecursiveCharacterTextSplitter for chunking
-            text_splitter = RecursiveCharacterTextSplitter(
-                chunk_size=1000,  # Increased chunk size to 1000
-                chunk_overlap=50,  # Overlap between chunks
-                length_function=len,  # Function to measure chunk size
-                separators=["\n\n", "\n", " ", ""]  # Split by paragraphs, lines, and words
-            )
-            
-            # Split the scraped content into chunks
-            chunks = text_splitter.split_text(context)
-            
-            # Generate embeddings for each chunk
-            embeddings = [generate_embeddings(chunk) for chunk in chunks]
-            
-            # Store embeddings in ChromaDB
-            if all(isinstance(embedding, list) for embedding in embeddings):  # Check if all embeddings are valid
-                store_embeddings(chunks, embeddings)
-                st.session_state["context"] = context
-                st.session_state["chunks"] = chunks
-                st.success("Content scraped, chunked, and embeddings stored successfully!")
+    if is_url_scraped(url):
+        st.warning("This website has already been scraped. No need to scrape it again.")
+    else:
+        with st.spinner("Scraping content..."):
+            context = scrape_website(url)
+            if "Scraping error" in context:
+                st.error(context)
             else:
-                st.error("Error generating embeddings for one or more chunks.")
+                # Use LangChain's RecursiveCharacterTextSplitter for chunking
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=1000,  # Increased chunk size to 1000
+                    chunk_overlap=50,  # Overlap between chunks
+                    length_function=len,  # Function to measure chunk size
+                    separators=["\n\n", "\n", " ", ""]  # Split by paragraphs, lines, and words
+                )
+                
+                # Split the scraped content into chunks
+                chunks = text_splitter.split_text(context)
+                
+                # Generate embeddings for each chunk
+                embeddings = [generate_embeddings(chunk) for chunk in chunks]
+                
+                # Store embeddings in ChromaDB
+                if all(isinstance(embedding, list) for embedding in embeddings):  # Check if all embeddings are valid
+                    store_embeddings(chunks, embeddings)
+                    log_scraped_url(url)  # Log the scraped URL
+                    st.session_state["context"] = context
+                    st.session_state["chunks"] = chunks
+                    st.success("Content scraped, chunked, and embeddings stored successfully!")
+                else:
+                    st.error("Error generating embeddings for one or more chunks.")
 
 if st.button("Clear Collection"):
     client_chroma.delete_collection("web_data_embeddings")
+    if os.path.exists("log.txt"):
+        os.remove("log.txt")  # Clear the log file
     st.session_state.clear()
-    st.success("Collection cleared successfully!")
+    st.success("Collection and log file cleared successfully!")
