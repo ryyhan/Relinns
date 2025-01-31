@@ -5,7 +5,7 @@ from openai import OpenAI
 import chromadb
 from dotenv import load_dotenv
 import os
-from langchain.text_splitter import RecursiveCharacterTextSplitter  # LangChain chunker
+from langchain.text_splitter import RecursiveCharacterTextSplitter  
 
 # Load environment variables
 load_dotenv()
@@ -83,8 +83,8 @@ def store_embeddings(url, chunks, embeddings):
             collection.add(
                 documents=[chunk],
                 embeddings=[embedding],
-                metadatas=[{"source": url}],  # Store URL as metadata
-                ids=[f"{url}_chunk_{i}"]  # Unique ID per website
+                metadatas=[{"source": url}],  
+                ids=[f"{url}_chunk_{i}"]  
             )
         
         print(f"Total documents after insertion: {collection.count()}")
@@ -170,7 +170,7 @@ if st.button("Scrape Website"):
                 embeddings = [generate_embeddings(chunk) for chunk in chunks]
 
                 if all(isinstance(embedding, list) for embedding in embeddings):
-                    store_embeddings(url, chunks, embeddings)  # Pass URL
+                    store_embeddings(url, chunks, embeddings)  
                     log_scraped_url(url)  
                     st.success(f"Content from {url} stored successfully!")
                 else:
